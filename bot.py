@@ -360,14 +360,26 @@ async def handle_text_command(message: Message):
 
         else:
             exp = intent.get("explanation", "")
-            await wait_msg.edit_text(
-                f"🤔 **Buyruqni tushunolmadim:**\n{exp}\n\n"
-                "Iltimos, aniqroq buyruq bering. Masalan:\n"
-                "• _Sinfdoshlar guruhiga Aziz yozgan oxirgi xabariga javob ber_\n"
-                "• _Bio ni 'Developer' deb o'zgartir_\n"
-                "• _Ustozimga salom deb yoz_",
-                parse_mode=ParseMode.MARKDOWN
-            )
+            if exp and not any(w in exp.lower() for w in ["bog'lanib bo'lmadi", "xatolik", "tushunolmadim"]):
+                await wait_msg.edit_text(
+                    f"🤖 {exp}\n\n"
+                    "💡 *Biror harakat bajarish uchun buyruq bering, masalan:*\n"
+                    "• _Aza dan hol-ahvol so'ra_\n"
+                    "• _Sinfdoshlar guruhiga Aziz yozgan oxirgi xabariga javob ber_\n"
+                    "• _Bio ni 'AI Developer' deb o'zgartir_\n"
+                    "• _Ustozimga salom deb yoz_",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                await wait_msg.edit_text(
+                    f"🤔 **Buyruqni tushunolmadim:**\n{exp}\n\n"
+                    "Iltimos, aniqroq buyruq bering. Masalan:\n"
+                    "• _Aza dan hol-ahvol so'ra_\n"
+                    "• _Sinfdoshlar guruhiga Aziz yozgan oxirgi xabariga javob ber_\n"
+                    "• _Bio ni 'Developer' deb o'zgartir_\n"
+                    "• _Ustozimga salom deb yoz_",
+                    parse_mode=ParseMode.MARKDOWN
+                )
 
     except Exception as e:
         logger.error(f"Xatolik yuz berdi: {e}", exc_info=True)

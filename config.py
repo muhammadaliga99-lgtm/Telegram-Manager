@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Google Gemini AI kaliti va model
     GEMINI_API_KEY: str = Field(..., description="Google Gemini API Key")
-    GEMINI_MODEL: str = Field("gemini-3.5-flash", description="Gemini model nomi")
+    GEMINI_MODEL: str = Field("gemini-3.1-flash-lite", description="Gemini model nomi")
 
     # Ovozli xabarlar uchun Edge-TTS ovozi
     DEFAULT_VOICE: str = Field("uz-UZ-SardorNeural", description="O'zbekcha erkak ovozi")
@@ -55,6 +55,9 @@ class Settings(BaseSettings):
         "islom": "8477424170",
         "bilol": "8183284050",
         "hojimurod": "6814184279",
+        "aza": "1692746050",                  # Aza (@AZA_9717)
+        "azik": "1692746050",
+        "aza_9717": "1692746050",
         "aziz": "5755701508",
         "abubakr": "8670628080"
     }

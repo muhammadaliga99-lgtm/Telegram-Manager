@@ -12,6 +12,7 @@ Google Gemini AI orqali:
 """
 import json
 import logging
+import re
 import socket
 from typing import Any, Dict, List, Optional
 import aiohttp
@@ -127,20 +128,43 @@ JAVOBNI FAQAT QUYIDAGI JSON FORMATIDA BER:
 class AIAgent:
     def __init__(self):
         self.api_key = settings.GEMINI_API_KEY
-        self.models_to_try = [settings.GEMINI_MODEL, "gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]
+        # Model fallback ketma-ketligi: eng tezkor va bepul kvotasi keng modellardan boshlaymiz
+        seen = set()
+        self.models_to_try = []
+        candidates = [
+            settings.GEMINI_MODEL,
+            "gemini-3.1-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite-preview",
+            "gemini-3.8-flash",
+            "gemini-2.5-flash",
+            "gemini-3.5-flash",
+        ]
+        for m in candidates:
+            if m and m not in seen:
+                seen.add(m)
+                self.models_to_try.append(m)
 
-    async def _call_gemini(self, system_instruction: str, user_content: str) -> Optional[Dict[str, Any]]:
-        """Gemini API chaqiruvi yordamchi funksiyasi."""
-        payload = {
-            "system_instruction": {"parts": [{"text": system_instruction}]},
-            "contents": [{"role": "user", "parts": [{"text": user_content}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.3
-            }
+    async def _call_gemini(
+        self,
+        system_instruction: Optional[str],
+        user_content: str,
+        json_mode: bool = True
+    ) -> Optional[Any]:
+        """Gemini API chaqiruvi yordamchi funksiyasi (JSON yoki matn ko'rinishida)."""
+        payload: Dict[str, Any] = {
+            "contents": [{"role": "user", "parts": [{"text": user_content}]}]
         }
+        if system_instruction:
+            payload["system_instruction"] = {"parts": [{"text": system_instruction}]}
+
+        gen_config: Dict[str, Any] = {"temperature": 0.3}
+        if json_mode:
+            gen_config["response_mime_type"] = "application/json"
+        payload["generationConfig"] = gen_config
+
         connector = aiohttp.TCPConnector(family=socket.AF_INET)
-        timeout = aiohttp.ClientTimeout(total=25)
+        timeout = aiohttp.ClientTimeout(total=20)
 
         async with aiohttp.ClientSession(connector=connector) as session:
             for model_name in self.models_to_try:
@@ -152,10 +176,18 @@ class AIAgent:
                             candidates = data.get("candidates", [])
                             if candidates:
                                 text = candidates[0]["content"]["parts"][0]["text"].strip()
-                                return json.loads(text)
+                                if not json_mode:
+                                    return text
+
+                                # JSON tozalash va parse qilish (markdown belgilaridan tozalash)
+                                clean_text = text
+                                if clean_text.startswith("```"):
+                                    clean_text = re.sub(r"^```(?:json)?\s*", "", clean_text)
+                                    clean_text = re.sub(r"\s*```$", "", clean_text)
+                                return json.loads(clean_text)
                         else:
                             err = await resp.text()
-                            logger.warning(f"Gemini {model_name} status {resp.status}: {err}")
+                            logger.warning(f"Gemini {model_name} status {resp.status}: {err[:150]}")
                 except Exception as e:
                     logger.warning(f"Gemini chaqiruvida xatolik ({model_name}): {e}")
                     continue
@@ -163,7 +195,7 @@ class AIAgent:
 
     async def classify_intent(self, user_prompt: str) -> Dict[str, Any]:
         """Muhammad Alining kiritgan buyrug'i niyatini aniqlash."""
-        res = await self._call_gemini(ROUTER_SYSTEM_PROMPT, user_prompt)
+        res = await self._call_gemini(ROUTER_SYSTEM_PROMPT, user_prompt, json_mode=True)
         if res:
             return res
         return {
@@ -216,7 +248,7 @@ Javobni quyidagi JSON formatida ber:
 }}
 """
         system_instr = "Sen Telegram suhbatlari kontekstini tahlil qiluvchi va Muhammad Ali nomidan munosib javob yozuvchi AI yordamchisan."
-        res = await self._call_gemini(system_instr, prompt)
+        res = await self._call_gemini(system_instr, prompt, json_mode=True)
         return res or {}
 
     async def summarize_chat(self, chat_name: str, messages: List[Dict[str, Any]]) -> str:
@@ -233,22 +265,12 @@ Oxirgi xabarlar:
 
 Vazifa: Ushbu suhbatda nimalar gaplashilganini Muhammad Aliga o'zbek tilida (Toshkent uslubida, lo'nda va tushunarli) 2-4 jumlada tushuntirib ber.
 """
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}]
-        }
-        connector = aiohttp.TCPConnector(family=socket.AF_INET)
-        timeout = aiohttp.ClientTimeout(total=20)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={self.api_key}"
-
-        try:
-            async with aiohttp.ClientSession(connector=connector) as session:
-                async with session.post(url, json=payload, timeout=timeout) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except Exception as e:
-            logger.error(f"Summarize xatolik: {e}")
-        return "Suhbat mazmunini umumlashtirishda xatolik yuz berdi."
+        res = await self._call_gemini(
+            system_instruction="Sen suhbatlarni tahlil qiluvchi va Toshkent jonli tilida lo'nda xulosa beruvchi yordamchisan.",
+            user_content=prompt,
+            json_mode=False
+        )
+        return res or "Suhbat mazmunini umumlashtirishda xatolik yuz berdi."
 
 
 ai_agent = AIAgent()
