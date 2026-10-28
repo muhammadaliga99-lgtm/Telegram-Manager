@@ -11,25 +11,27 @@ Muhammad Ali Gafurovning shaxsiy Telegram hisobini masofadan boshqaruvchi, sun'i
 
 ---
 
-## ⚡ Asosiy Imkoniyatlar
+## ⚡ Asosiy Imkoniyatlar (v2.0)
 
-1. **Tabiiy Tilda Buyruq Berish:**
-   - «_Ustozimga dars qachon bo'lishini so'rab yoz_»
-   - «_Adajonga hozir yo'ldaman, 15 minutda boraman deb golos yubor_»
-   - «_Islomga nma gap jigar deb yoz_»
-2. **Shaxsiy Yozish Uslubi (Persona):**
+1. **Kontekstli Aqlli Javoblar (Smart Reply):**
+   - «_Sinfdoshlar guruhiga Aziz yozgan oxirgi xabariga javob ber_»
+   - Bot guruh tarixini o'qib, Azizning oxirgi xabarini aniqlaydi va unga iqtibos (quote/reply) bilan munosib javob jo'natadi!
+2. **PFP va Profil Sozlamalarini Boshqarish:**
+   - Botga rasm yuborilsa ➔ Darhol sizning Telegram profilingiz rasmi (PFP avatar) yangilanadi!
+   - «_Bio ni 'AI Engineer' deb o'zgartir_»
+   - «_Ismimni Muhammadali deb qo'y_»
+   - «_Profilim ma'lumotlarini ko'rsat_»
+3. **Guruhlardagi Suhbatlarni Tushuntirib Berish (Summarize):**
+   - «_Sinfdoshlar guruhida nima gaplar bo'lyapti?_»
+   - Oxirgi 20 ta xabarni o'qib, qisqa va lo'nda tushuntirib beradi.
+4. **Shaxsiy Yozish Uslubi (Persona):**
    - Toshkent shahar yoshlarining jonli tili (`-votti`, `-dee`, `-etdim`, `qchu`, `karoche`, `hoz`, `hop`).
-   - Suhbatdoshga moslashish:
-     - **Ustozlar:** «*Assalamu Alaykum Ustoz*», hurmat bilan va samimiy.
-     - **Ota-ona:** «*Adajon*», «*Oyijon*», qisqa va lo'nda.
-     - **Do'stlar / Jigar:** «*jigar*», «*bro*», «*nma gap*».
-3. **Avtomatik Rejim (Instant Send):**
-   - AI matnni tuzishi bilanoq sizning nomingizdan darhol yetkazadi va sizga botda to'liq hisobot beradi.
-4. **Ovozli Xabarlar (Neural Voice Note - Golos):**
-   - Microsoft Azure Neural TTS (`uz-UZ-SardorNeural`) orqali tabiiy o'zbekcha ovozli xabar (dumaloq video emas, toza `.ogg` voice note) shaklida jo'natadi.
-5. **Render 24/7 Doimiy Ishlash:**
-   - Telethon `StringSession` orqali diskka SQLite fayl yozmasdan xotirada ishlaydi (ephemeral disk muammosi yo'q).
-   - Ichki aiohttp HTTP web serveri Render healthcheck portini (`$PORT`) tinglaydi.
+   - Suhbatdoshga moslashish (Ustozlar, Ota-ona, Do'stlar/Jigar).
+5. **Ovozli Xabarlar (Neural Voice Note - Golos):**
+   - Microsoft Azure Neural TTS (`uz-UZ-SardorNeural`) orqali tabiiy ovozli xabar jo'natish.
+6. **Render 24/7 Doimiy Ishlash:**
+   - Telethon `StringSession` orqali xotirada ishlaydi.
+   - aiohttp Web serveri `/healthz` tekshiruvini qabul qiladi.
 
 ---
 

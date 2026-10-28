@@ -1,10 +1,16 @@
 """
-Telegram Bot moduli (aiogram v3):
-Muhammad Ali uchun xavfsiz boshqaruv paneli.
-Faqat ADMIN_USER_ID uchun ruxsat berilgan.
-Boshqa har qanday foydalanuvchi qat'iyan bloklanadi.
+Telegram Bot moduli (Kengaytirilgan v2.0 - aiogram v3):
+- Smart Reply (Kontekst va guruhdagi aniq odamning oxirgi xabariga javob berish)
+- PFP Profil rasmini o'zgartirish (Foydalanuvchi rasm yuborganda)
+- Bio, Ism, Familiya va @username sozlamalarini boshqarish
+- Chatlardagi suhbatlarni umumlashtirish (summarize)
+- Matnli va Edge-TTS ovozli xabarlarni avtomatik yetkazish
+- 100% Xavfsizlik: Faqat ADMIN_USER_ID uchun ochiq.
 """
 import logging
+import os
+import tempfile
+import time
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.enums import ChatAction, ParseMode
 from aiogram.filters import Command, CommandStart
@@ -21,7 +27,7 @@ dp = Dispatcher()
 
 
 # ========================================================
-# XAVFSIZLIK FILTERI: Faqat Bot Egasi (ADMIN_USER_ID)
+# XAVFSIZLIK MIDDLEWARE: Faqat Bot Egasi (ADMIN_USER_ID)
 # ========================================================
 @dp.message.outer_middleware()
 async def security_middleware(handler, event: types.TelegramObject, data: dict):
@@ -48,20 +54,41 @@ async def security_middleware(handler, event: types.TelegramObject, data: dict):
 async def cmd_start(message: Message):
     text = (
         "👋 **Assalomu alaykum, Muhammad Ali!**\n\n"
-        "🤖 **Telegram Manager AI Agent** 24/7 ish rejimida faol.\n\n"
-        "Siz bu yerga tabiiy tilda buyruq bersangiz, Agent uni darhol tahlil qilib, "
-        "shaxsiy yozish uslubingizda (Toshkent shevasi) qabul qiluvchiga **avtomatik** yuboradi:\n\n"
-        "📌 **Misollar:**\n"
-        "• _Ustozimga salom deb yoz_\n"
-        "• _Adajonga hozir yo'ldaman, 15 minutda boraman deb golos yubor_\n"
-        "• _Islomga nma gap jigar deb yoz_\n"
-        "• _Bilolga loyiha tayyor boldi deb yoz_\n\n"
-        "🛠 **Qo'shimcha buyruqlar:**\n"
-        "/status — Tizim va userbot holati\n"
-        "/contacts — Tezkor kontaktlar ro'yxati\n"
-        "/help — Qo'llanma"
+        "🤖 **Telegram Manager AI Agent (v2.0)** to'liq xizmatingizda!\n\n"
+        "Endi siz nafaqat xabar yozish, balki Telegram'dagi **HAMMA narsani** boshqara olasiz:\n\n"
+        "💬 **Kontekstli Aqlli Javoblar (Smart Reply):**\n"
+        "• _Sinfdoshlar guruhiga Aziz yozgan oxirgi xabariga javob ber_\n"
+        "• _Ustozimga oxirgi gaplariga mos javob yoz_\n\n"
+        "🖼 **PFP / Profil Sozlamalari:**\n"
+        "• Botga rasm tashlang ➔ Profil rasmingiz (PFP) o'zgaradi!\n"
+        "• _Bio ni 'Full-Stack & AI Engineer' deb o'zgartir_\n"
+        "• _Profilim ma'lumotlarini ko'rsat_\n\n"
+        "📊 **Guruhlarni O'qish (Summary):**\n"
+        "• _Sinfdoshlar guruhida nima gaplar bo'lyapti?_\n\n"
+        "🎙 **Ovozli Goloslar va Matnlar:**\n"
+        "• _Adajonga yo'ldaman deb golos yubor_\n"
+        "• _Ustozimga salom deb yoz_\n\n"
+        "⚙️ /status | /profile | /contacts | /help"
     )
     await message.answer(text, parse_mode=ParseMode.MARKDOWN)
+
+
+@dp.message(Command("profile"))
+async def cmd_profile(message: Message):
+    """Joriy profil ma'lumotlarini ko'rsatish."""
+    try:
+        p = await userbot_manager.get_my_profile()
+        text = (
+            "👤 **Sizning Telegram Profilingiz:**\n\n"
+            f"• **Ism:** {p['first_name']} {p['last_name']}\n"
+            f"• **Username:** @{p['username']}\n"
+            f"• **Telefon:** `{p['phone']}`\n"
+            f"• **Bio (About):** _{p['about']}_\n"
+            f"• **ID:** `{p['id']}`"
+        )
+        await message.answer(text, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        await message.answer(f"Profil ma'lumotlarini olishda xatolik: {e}")
 
 
 @dp.message(Command("status"))
@@ -70,100 +97,252 @@ async def cmd_status(message: Message):
     text = (
         "📊 **Tizim Holati:**\n\n"
         f"• **Telegram Userbot:** {userbot_status}\n"
-        f"• **AI Model:** `{settings.GEMINI_MODEL}`\n"
+        f"• **AI Model:** `{settings.GEMINI_MODEL}` (Google Gemini)\n"
         f"• **Standart Ovoz (TTS):** `{settings.DEFAULT_VOICE}`\n"
-        f"• **Rejim:** ⚡ Avtomatik yuborish (Tasdiqsiz)\n"
+        f"• **Imkoniyatlar:** Smart Reply, PFP Changer, Bio Editor, Summary, Voice Note\n"
         f"• **Xavfsizlik:** 🔒 Faqat siz (ID: `{settings.ADMIN_USER_ID}`)\n"
-        f"• **Server:** 🌐 Render 24/7 Web Service (Port: `{settings.PORT}`)"
+        f"• **Cloud:** 🌐 Render 24/7 (Port: `{settings.PORT}`)"
     )
     await message.answer(text, parse_mode=ParseMode.MARKDOWN)
 
 
 @dp.message(Command("contacts"))
 async def cmd_contacts(message: Message):
-    lines = ["📇 **Tezkor Kontaktlar (Aliases):**\n"]
+    lines = ["📇 **Tezkor Kontaktlar va Guruhlar:**\n"]
     for alias, peer_id in settings.KNOWN_ALIASES.items():
-        lines.append(f"• `{alias}` ➔ ID: `{peer_id}`")
-    lines.append("\n💡 *Shuningdek, @username yoki kontaktdagi ismlarni ham to'g'ridan-to'g'ri tushunadi.*")
+        lines.append(f"• `{alias}` ➔ `{peer_id}`")
+    lines.append("\n💡 *Barcha guruhlar va kontaktlar nomini aqlli qidiruv (Fuzzy) orqali tushunadi.*")
     await message.answer("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
-@dp.message(Command("help"))
-async def cmd_help(message: Message):
-    text = (
-        "📖 **Telegram Manager Qo'llanmasi:**\n\n"
-        "1️⃣ **Matnli xabar yuborish:**\n"
-        "«_Ustozimga dars soat nechada bo'ladi deb so'ra_»\n"
-        "AI buni sizning nomingizdan samimiy va hurmat bilan («Assalamu Alaykum Ustoz...») yozib yuboradi.\n\n"
-        "2️⃣ **Ovozli xabar (Golos) yuborish:**\n"
-        "«_Adajonga kech qolaman deb golos yubor_» yoki «_... deb ovozli xabar qil_»\n"
-        "AI matnni tabiiy o'zbekcha sun'iy intellekt ovoziga aylantirib, audio note sifatida jo'natadi.\n\n"
-        "3️⃣ **24/7 Ishlash:**\n"
-        "Loyiha Render platformasida doimiy ishlaydi. Telefoningiz o'chiq bo'lsa ham bot buyruqlarni qabul qiladi."
-    )
-    await message.answer(text, parse_mode=ParseMode.MARKDOWN)
+# ========================================================
+# RASM YUBORILGANDA: PFP (PROFIL RASMI) QILISH
+# ========================================================
+@dp.message(F.photo)
+async def handle_photo(message: Message):
+    await message.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_PHOTO)
+    wait_msg = await message.answer("⏳ _Rasm qabul qilindi, profil rasmi (PFP) o'rnatilmoqda..._", parse_mode=ParseMode.MARKDOWN)
+
+    temp_path = os.path.join(tempfile.gettempdir(), f"pfp_{int(time.time())}.jpg")
+    try:
+        # Eng yuqori sifatli rasmni yuklab olamiz
+        photo = message.photo[-1]
+        await message.bot.download(photo.file_id, destination=temp_path)
+
+        res = await userbot_manager.update_profile_photo(temp_path)
+        await wait_msg.edit_text(
+            "🖼 **Muvaffaqiyatli!**\n\n"
+            "Telegram akkauntingiz profil rasmi (PFP avatar) yangilandi! ✨",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception as e:
+        logger.error(f"PFP yangilashda xatolik: {e}", exc_info=True)
+        await wait_msg.edit_text(f"❌ Profil rasmini o'zgartirishda xatolik: `{e}`", parse_mode=ParseMode.MARKDOWN)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 
 # ========================================================
-# ASOSIY BUYRUQ VA MATNLARNI QAYTA ISHLASH (AI AGENT)
+# ASOSIY BUYRUQLAR (AI AGENT MATNLI HANDLER)
 # ========================================================
 @dp.message(F.text)
-async def handle_user_command(message: Message):
+async def handle_text_command(message: Message):
     user_prompt = message.text.strip()
     await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
 
-    wait_msg = await message.answer("⏳ _Agent buyruqni tahlil qilmoqda..._", parse_mode=ParseMode.MARKDOWN)
+    wait_msg = await message.answer("⏳ _Agent tahlil qilmoqda..._", parse_mode=ParseMode.MARKDOWN)
 
     try:
-        # Gemini AI tahlili
-        decision = await ai_agent.process_command(user_prompt)
-        action = decision.get("action", "clarify")
-        recipient = decision.get("recipient", "").strip()
-        message_text = decision.get("message_text", "").strip()
-        voice = decision.get("voice", settings.DEFAULT_VOICE)
+        # 1. Niyatni (Intent) aniqlash
+        intent = await ai_agent.classify_intent(user_prompt)
+        action = intent.get("action", "clarify")
 
-        if action == "clarify" or not recipient:
+        # ----------------------------------------------------
+        # HARAKAT 1: SMART REPLY (Guruh/Chatdagi xabarga munosib javob)
+        # ----------------------------------------------------
+        if action == "smart_reply":
+            chat_target = intent.get("chat") or intent.get("recipient")
+            target_person = intent.get("target_person")
+            instruction = intent.get("instruction")
+            is_voice = intent.get("voice", False)
+
+            if not chat_target:
+                await wait_msg.edit_text("Qaysi guruh yoki chat ekanligi aniqlanmadi.")
+                return
+
+            await wait_msg.edit_text("🔍 _Suhbat tarixi o'qilmoqda va munosib javob tayyorlanmoqda..._", parse_mode=ParseMode.MARKDOWN)
+
+            # Tarixni o'qish
+            messages, chat_name, entity = await userbot_manager.get_recent_messages(chat_target, limit=15)
+            if not messages:
+                await wait_msg.edit_text(f"«{chat_name}» chatidan xabarlar topilmadi.")
+                return
+
+            # Gemini orqali kontekstli javob generatsiya qilish
+            decision = await ai_agent.generate_contextual_reply(
+                chat_name,
+                messages,
+                target_person,
+                instruction
+            )
+
+            target_msg_id = decision.get("target_message_id")
+            sender_name = decision.get("sender_name", target_person or "Suhbatdosh")
+            quoted_text = decision.get("quoted_text", "")
+            reply_text = decision.get("reply_text")
+
+            if not reply_text:
+                await wait_msg.edit_text("Javob matnini shakllantirib bo'lmadi.")
+                return
+
+            # Yuborish (ovozli yoki matnli)
+            if is_voice:
+                await message.bot.send_chat_action(message.chat.id, ChatAction.RECORD_VOICE)
+                await userbot_manager.send_voice_message(
+                    chat_target,
+                    reply_text,
+                    reply_to_msg_id=target_msg_id
+                )
+                type_label = "🎙 Ovozli golos (iqtibos bilan)"
+            else:
+                await userbot_manager.send_text_message(
+                    chat_target,
+                    reply_text,
+                    reply_to_msg_id=target_msg_id
+                )
+                type_label = "💬 Matnli xabar (iqtibos bilan)"
+
+            quote_block = f"\n💬 **{sender_name}ning xabari:** «_{quoted_text}_»" if quoted_text else ""
             await wait_msg.edit_text(
-                f"🤔 **Tushunarsiz buyruq yoki qabul qiluvchi aniqlanmadi:**\n\n"
-                f"{message_text or 'Iltimos, kimga nima deb yozish kerakligini aniqroq yozing.'}\n\n"
-                f"Misol: «_Ustozimga salom deb yoz_»",
+                f"✅ **Munosib javob yuborildi!**\n\n"
+                f"👥 **Suhbat:** `{chat_name}`{quote_block}\n"
+                f"↩️ **Sizning javobingiz:**\n> {reply_text}\n\n"
+                f"⚡ *{type_label} avtomatik yetkazildi.*",
                 parse_mode=ParseMode.MARKDOWN
             )
-            return
 
-        # 1. MATNLI XABAR YUBORISH
-        if action == "send_message":
-            res = await userbot_manager.send_text_message(recipient, message_text)
-            target_name = res.get("target_name", recipient)
+        # ----------------------------------------------------
+        # HARAKAT 2: SUHBAT MAZMUNINI O'QISH (SUMMARIZE)
+        # ----------------------------------------------------
+        elif action == "read_and_summarize":
+            chat_target = intent.get("chat") or intent.get("recipient")
+            if not chat_target:
+                await wait_msg.edit_text("Qaysi guruhni o'qish kerakligi aniqlanmadi.")
+                return
+
+            await wait_msg.edit_text(f"📖 _«{chat_target}» guruhidagi suhbatlar o'qilmoqda..._", parse_mode=ParseMode.MARKDOWN)
+            messages, chat_name, entity = await userbot_manager.get_recent_messages(chat_target, limit=20)
+            summary = await ai_agent.summarize_chat(chat_name, messages)
+
+            await wait_msg.edit_text(
+                f"📋 **«{chat_name}» guruhidagi oxirgi gaplar mazmuni:**\n\n"
+                f"{summary}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+        # ----------------------------------------------------
+        # HARAKAT 3: PROFIL SOZLAMALARINI O'ZGARTIRISH (BIO, ISM, USERNAME)
+        # ----------------------------------------------------
+        elif action == "update_profile":
+            fn = intent.get("first_name")
+            ln = intent.get("last_name")
+            about = intent.get("about")
+            username = intent.get("username")
+
+            results = []
+            if fn or ln or about:
+                res = await userbot_manager.update_profile(first_name=fn, last_name=ln, about=about)
+                if about:
+                    results.append(f"• **Bio:** «_{about}_»")
+                if fn:
+                    results.append(f"• **Ism:** «{fn}»")
+
+            if username:
+                await userbot_manager.update_username(username)
+                results.append(f"• **Username:** @{username}")
+
+            if results:
+                await wait_msg.edit_text(
+                    "⚙️ **Profil sozlamalari yangilandi:**\n\n" + "\n".join(results),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                await wait_msg.edit_text("O'zgartirish uchun ma'lumot topilmadi.")
+
+        # ----------------------------------------------------
+        # HARAKAT 4: PROFIL MA'LUMOTLARINI KO'RSATISH
+        # ----------------------------------------------------
+        elif action == "get_profile":
+            p = await userbot_manager.get_my_profile()
+            await wait_msg.edit_text(
+                "👤 **Sizning Profilingiz:**\n\n"
+                f"• **Ism:** {p['first_name']} {p['last_name']}\n"
+                f"• **Username:** @{p['username']}\n"
+                f"• **Bio (About):** _{p['about']}_\n"
+                f"• **ID:** `{p['id']}`",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+        # ----------------------------------------------------
+        # HARAKAT 5: ODDIY MATNLI XABAR YUBORISH
+        # ----------------------------------------------------
+        elif action == "send_message":
+            recipient = intent.get("recipient") or intent.get("chat")
+            text = intent.get("message_text")
+            if not recipient or not text:
+                await wait_msg.edit_text("Qabul qiluvchi yoki xabar matni to'liq emas.")
+                return
+
+            res = await userbot_manager.send_text_message(recipient, text)
             await wait_msg.edit_text(
                 f"✅ **Xabar yuborildi!**\n\n"
-                f"👤 **Qabul qiluvchi:** `{target_name}`\n"
-                f"💬 **Yuborilgan matn:**\n> {message_text}\n\n"
-                f"⚡ *Avtomatik rejimda sizning nomingizdan yetkazildi.*",
+                f"👤 **Qabul qiluvchi:** `{res.get('target_name', recipient)}`\n"
+                f"💬 **Yuborilgan matn:**\n> {text}\n\n"
+                f"⚡ *Avtomatik rejimda sizning nomingizdan jo'natildi.*",
                 parse_mode=ParseMode.MARKDOWN
             )
 
-        # 2. OVOZLI XABAR (GOLOS) YUBORISH
+        # ----------------------------------------------------
+        # HARAKAT 6: OVOZLI XABAR (GOLOS) YUBORISH
+        # ----------------------------------------------------
         elif action == "send_voice":
+            recipient = intent.get("recipient") or intent.get("chat")
+            text = intent.get("message_text")
+            voice = intent.get("voice", settings.DEFAULT_VOICE)
+
+            if not recipient or not text:
+                await wait_msg.edit_text("Qabul qiluvchi yoki ovozli matn to'liq emas.")
+                return
+
             await message.bot.send_chat_action(message.chat.id, ChatAction.RECORD_VOICE)
-            res = await userbot_manager.send_voice_message(recipient, message_text, voice=voice)
-            target_name = res.get("target_name", recipient)
+            res = await userbot_manager.send_voice_message(recipient, text, voice=voice)
             await wait_msg.edit_text(
                 f"🎙 **Ovozli xabar (Golos) yuborildi!**\n\n"
-                f"👤 **Qabul qiluvchi:** `{target_name}`\n"
+                f"👤 **Qabul qiluvchi:** `{res.get('target_name', recipient)}`\n"
                 f"🔊 **Ovoz turi:** `{voice}`\n"
-                f"💬 **Aytilgan matn:**\n> {message_text}\n\n"
-                f"⚡ *Avtomatik rejimda ovozli xabar qilib yetkazildi.*",
+                f"💬 **Aytilgan matn:**\n> {text}\n\n"
+                f"⚡ *Avtomatik rejimda yetkazildi.*",
                 parse_mode=ParseMode.MARKDOWN
             )
 
         else:
-            await wait_msg.edit_text(f"Noma'lum harakat: {action}")
+            exp = intent.get("explanation", "")
+            await wait_msg.edit_text(
+                f"🤔 **Buyruqni tushunolmadim:**\n{exp}\n\n"
+                "Iltimos, aniqroq buyruq bering. Masalan:\n"
+                "• _Sinfdoshlar guruhiga Aziz yozgan oxirgi xabariga javob ber_\n"
+                "• _Bio ni 'Developer' deb o'zgartir_\n"
+                "• _Ustozimga salom deb yoz_",
+                parse_mode=ParseMode.MARKDOWN
+            )
 
     except Exception as e:
-        logger.error(f"Xabar yuborishda xatolik: {e}", exc_info=True)
+        logger.error(f"Xatolik yuz berdi: {e}", exc_info=True)
         await wait_msg.edit_text(
-            f"❌ **Xatolik yuz berdi:**\n`{str(e)}`\n\n"
-            f"Iltimos, qabul qiluvchi nomi yoki buyruqni tekshirib qayta urinib ko'ring.",
+            f"❌ **Xatolik yuz berdi:**\n`{str(e)}`",
             parse_mode=ParseMode.MARKDOWN
         )

@@ -1,8 +1,9 @@
 """
-Telethon Userbot moduli:
-Muhammad Alining shaxsiy Telegram hisobi nomidan xabarlarni o'qish,
-kontaktlarni qidirish, matnli xabarlar va Edge-TTS ovozli xabarlarni (golos)
-yuborish vazifalarini bajaradi.
+Telethon Userbot moduli (Kengaytirilgan v2.0):
+- Xabarlarni o'qish, guruhlar va shaxsiy chatlar tarixini olish
+- Kontekstga qarab iqtibos (reply_to) bilan javob qaytarish
+- Profil sozlamalari (PFP avatar, Bio, Ism, Username) ni o'zgartirish
+- Matnli va Edge-TTS ovozli xabarlarni (golos) yuborish
 """
 import asyncio
 import logging
@@ -16,6 +17,9 @@ import edge_tts
 from telethon import TelegramClient
 from telethon.errors import RPCError
 from telethon.sessions import StringSession
+from telethon.tl.functions.account import UpdateProfileRequest, UpdateUsernameRequest
+from telethon.tl.functions.photos import UploadProfilePhotoRequest
+from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import Channel, Chat, User
 
 from config import settings
@@ -48,7 +52,7 @@ class UserbotManager:
         self._last_dialogs_fetch: float = 0.0
 
     async def start(self):
-        """Telethon mijozini ishga tushirish va ulanishni tekshirish."""
+        """Telethon mijozini ishga tushirish."""
         logger.info("Telethon Userbot mijoziga ulanmoqda...")
         self.client = TelegramClient(
             StringSession(self.session_str),
@@ -57,10 +61,7 @@ class UserbotManager:
         )
         await self.client.connect()
         if not await self.client.is_user_authorized():
-            raise RuntimeError(
-                "Xatolik: Telethon sessiyasi tasdiqlanmagan (unauthorized)! "
-                "Iltimos, sessiya kalitini qayta tekshiring."
-            )
+            raise RuntimeError("Xatolik: Telethon sessiyasi tasdiqlanmagan (unauthorized)!")
         me = await self.client.get_me()
         logger.info(f"Telethon muvaffaqiyatli ulandi! Egasi: {me.first_name} (@{me.username}) ID={me.id}")
         await self.refresh_dialogs()
@@ -74,8 +75,8 @@ class UserbotManager:
     def is_connected(self) -> bool:
         return bool(self.client and self.client.is_connected())
 
-    async def refresh_dialogs(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Oxirgi suhbatlar ro'yxatini yangilash va keshda saqlash."""
+    async def refresh_dialogs(self, limit: int = 60) -> List[Dict[str, Any]]:
+        """Oxirgi suhbatlar ro'yxatini olish va keshda saqlash."""
         if not self.client:
             return []
         dialogs = []
@@ -104,7 +105,6 @@ class UserbotManager:
         return self._cached_dialogs
 
     def _format_entity_name(self, entity: Any) -> str:
-        """Entity nomini chiroyli formatda chiqarish."""
         if not entity:
             return "Noma'lum"
         first = getattr(entity, "first_name", None) or getattr(entity, "title", None) or ""
@@ -114,14 +114,7 @@ class UserbotManager:
         return f"{full} (@{username})" if username else full
 
     async def resolve_peer(self, target: str) -> Tuple[Any, str]:
-        """
-        Qabul qiluvchi identifikatorini entity ob'ektiga aylantirish:
-        1. Known aliases (ustoz, adajon, sinfdoshlar va h.k.)
-        2. Raqamli Telegram ID
-        3. @username
-        4. Aqlli fuzzy qidiruv (stop-wordlarni tozalab, guruh nomini solishtirish)
-        5. cl.get_entity() to'g'ridan-to'g'ri chaqiruv
-        """
+        """Aqlli qidiruv orqali peer (chat/foydalanuvchi) ob'ektini topish."""
         if not self.client:
             raise RuntimeError("Telethon mijozi ulanmagan!")
 
@@ -129,13 +122,12 @@ class UserbotManager:
         lowered = cleaned.lower()
         cleaned_words = _clean_str(lowered)
 
-        # 1. Alias orqali tekshirish (to'g'ridan-to'g'ri va tozalangan holda)
+        # 1. Aliaslar orqali tekshirish
         for alias_key, alias_id in settings.KNOWN_ALIASES.items():
             if alias_key == lowered or alias_key in lowered or alias_key == cleaned_words:
                 cleaned = alias_id
                 break
 
-        # Keshni yangilab olish agar bo'sh yoki eskirgan bo'lsa
         if not self._cached_dialogs or (time.time() - self._last_dialogs_fetch > 300):
             await self.refresh_dialogs()
 
@@ -164,7 +156,7 @@ class UserbotManager:
             except Exception as e:
                 logger.warning(f"Username orqali entity topilmadi ({cleaned}): {e}")
 
-        # 4. Aqlli dialoglar qidiruvi (Token va Substring matching)
+        # 4. Aqlli dialoglar qidiruvi
         target_tokens = set(_clean_tokens(cleaned))
         best_match = None
         best_score = 0.0
@@ -175,16 +167,13 @@ class UserbotManager:
             d_clean = _clean_str(d_name)
             d_tokens = set(_clean_tokens(d_name)) | set(_clean_tokens(d_user))
 
-            # Aniq moslik
             if cleaned_words and (cleaned_words == d_clean or cleaned_words == d_user):
                 return d["entity"], d["name"]
 
-            # Substring moslik
             if cleaned_words and len(cleaned_words) >= 3:
                 if cleaned_words in d_clean or d_clean in cleaned_words:
                     return d["entity"], d["name"]
 
-            # Token overlap hisoblash
             if target_tokens and d_tokens:
                 overlap = target_tokens.intersection(d_tokens)
                 if overlap:
@@ -196,29 +185,73 @@ class UserbotManager:
         if best_match and best_score >= 0.5:
             return best_match["entity"], best_match["name"]
 
-        # 5. Dialoglarni kengroq (100 ta) yangilab qayta urinib ko'rish
         await self.refresh_dialogs(limit=100)
         for d in self._cached_dialogs:
             d_clean = _clean_str(d["name"])
             if cleaned_words and (cleaned_words in d_clean or d_clean in cleaned_words):
                 return d["entity"], d["name"]
 
-        # 6. So'nggi chora: get_entity
         try:
             entity = await self.client.get_entity(cleaned)
             return entity, self._format_entity_name(entity)
         except Exception as e:
             raise ValueError(f"Qabul qiluvchi topilmadi: '{target}'. Iltimos, suhbat nomini to'g'ri yozing.")
 
-    async def send_text_message(self, recipient: str, text: str) -> Dict[str, Any]:
-        """Muhammad Alining nomidan matnli xabar yuborish."""
+    # ========================================================
+    # XABARLAR TARIXI VA KONTEKST OLISH
+    # ========================================================
+    async def get_recent_messages(self, chat_target: str, limit: int = 15) -> Tuple[List[Dict[str, Any]], str, Any]:
+        """Berilgan chatning oxirgi xabarlar tarixini to'liq ma'lumotlari bilan qaytaradi."""
+        entity, target_name = await self.resolve_peer(chat_target)
+        messages = []
+        async for m in self.client.iter_messages(entity, limit=limit):
+            sender = await m.get_sender()
+            sender_name = "Noma'lum"
+            sender_username = ""
+            sender_id = m.sender_id
+
+            if sender:
+                fn = getattr(sender, "first_name", "") or getattr(sender, "title", "") or ""
+                ln = getattr(sender, "last_name", "") or ""
+                sender_name = f"{fn} {ln}".strip() if ln else fn
+                sender_username = getattr(sender, "username", "") or ""
+
+            messages.append({
+                "id": m.id,
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "sender_username": sender_username,
+                "text": m.text or "[media/fayl]",
+                "date": m.date.strftime("%Y-%m-%d %H:%M:%S") if m.date else "",
+                "out": m.out
+            })
+
+        # Xabarlarni eskidan yangiga qarab tartiblaymiz
+        ordered_messages = list(reversed(messages))
+        return ordered_messages, target_name, entity
+
+    # ========================================================
+    # XABAR VA OVOZLI XABAR YUBORISH (REPLY QO'LLAB-QUVVATLANADI)
+    # ========================================================
+    async def send_text_message(
+        self,
+        recipient: str,
+        text: str,
+        reply_to_msg_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Matnli xabar yuborish (agar reply_to_msg_id berilsa, iqtibos qiladi)."""
         entity, target_name = await self.resolve_peer(recipient)
-        msg = await self.client.send_message(entity, text)
+        msg = await self.client.send_message(
+            entity,
+            text,
+            reply_to=reply_to_msg_id
+        )
         return {
             "success": True,
             "target_name": target_name,
             "target_id": getattr(entity, "id", None),
             "message_id": msg.id,
+            "reply_to": reply_to_msg_id,
             "text": text,
             "type": "text"
         }
@@ -227,13 +260,13 @@ class UserbotManager:
         self,
         recipient: str,
         text: str,
-        voice: Optional[str] = None
+        voice: Optional[str] = None,
+        reply_to_msg_id: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Muhammad Alining nomidan matnni sun'iy intellekt ovoziga aylantirib (golos) yuborish."""
+        """Ovozli xabar (Edge-TTS golos) yuborish."""
         entity, target_name = await self.resolve_peer(recipient)
         selected_voice = voice or settings.DEFAULT_VOICE
 
-        # Vaqtinchalik audio fayl yaratish
         temp_dir = tempfile.gettempdir()
         temp_file = os.path.join(temp_dir, f"voice_{int(time.time() * 1000)}.ogg")
 
@@ -241,11 +274,11 @@ class UserbotManager:
             communicate = edge_tts.Communicate(text, selected_voice)
             await communicate.save(temp_file)
 
-            # Telegram'ga voice note (dumaloq emas, to'g'ri ogg ovozli xabar) shaklida jo'natish
             msg = await self.client.send_file(
                 entity,
                 temp_file,
-                voice_note=True
+                voice_note=True,
+                reply_to=reply_to_msg_id
             )
 
             return {
@@ -253,6 +286,7 @@ class UserbotManager:
                 "target_name": target_name,
                 "target_id": getattr(entity, "id", None),
                 "message_id": msg.id,
+                "reply_to": reply_to_msg_id,
                 "text": text,
                 "voice": selected_voice,
                 "type": "voice"
@@ -264,15 +298,76 @@ class UserbotManager:
                 except Exception:
                     pass
 
-    async def read_recent_messages(self, recipient: str, limit: int = 5) -> List[str]:
-        """Chat tarixidan oxirgi xabarlarni o'qish."""
-        entity, target_name = await self.resolve_peer(recipient)
-        history = []
-        async for m in self.client.iter_messages(entity, limit=limit):
-            if m.text:
-                who = "Men" if m.out else target_name
-                history.append(f"[{m.date.strftime('%H:%M')}] {who}: {m.text}")
-        return list(reversed(history))
+    # ========================================================
+    # PROFIL VA NASTROYKALARNI BOSHQARISH (PFP, BIO, ISM, USERNAME)
+    # ========================================================
+    async def update_profile(
+        self,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+        about: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Ism, familiya va Bio (about) ma'lumotlarini o'zgartirish."""
+        if not self.client:
+            raise RuntimeError("Telethon mijozi ulanmagan!")
+
+        kwargs = {}
+        if first_name is not None:
+            kwargs["first_name"] = first_name
+        if last_name is not None:
+            kwargs["last_name"] = last_name
+        if about is not None:
+            kwargs["about"] = about
+
+        await self.client(UpdateProfileRequest(**kwargs))
+        me = await self.client.get_me()
+        return {
+            "success": True,
+            "first_name": me.first_name,
+            "last_name": me.last_name,
+            "about": about,
+            "username": me.username
+        }
+
+    async def update_profile_photo(self, photo_path: str) -> Dict[str, Any]:
+        """Profil rasmini (PFP avatar) yangilash."""
+        if not self.client:
+            raise RuntimeError("Telethon mijozi ulanmagan!")
+        if not os.path.exists(photo_path):
+            raise FileNotFoundError(f"Rasm topilmadi: {photo_path}")
+
+        uploaded_file = await self.client.upload_file(photo_path)
+        await self.client(UploadProfilePhotoRequest(file=uploaded_file))
+        return {
+            "success": True,
+            "message": "Profil rasmi muvaffaqiyatli o'zgartirildi!"
+        }
+
+    async def update_username(self, username: str) -> Dict[str, Any]:
+        """Telegram @username'ni o'zgartirish."""
+        if not self.client:
+            raise RuntimeError("Telethon mijozi ulanmagan!")
+        clean_user = username.lstrip("@").strip()
+        await self.client(UpdateUsernameRequest(username=clean_user))
+        return {
+            "success": True,
+            "username": clean_user
+        }
+
+    async def get_my_profile(self) -> Dict[str, Any]:
+        """Joriy profil ma'lumotlarini olish."""
+        if not self.client:
+            raise RuntimeError("Telethon mijozi ulanmagan!")
+        me = await self.client.get_me()
+        full = await self.client(GetFullUserRequest(me))
+        return {
+            "id": me.id,
+            "first_name": me.first_name or "",
+            "last_name": me.last_name or "",
+            "username": me.username or "",
+            "phone": me.phone or "",
+            "about": getattr(full.full_user, "about", "") or "(bo'sh)"
+        }
 
 
 userbot_manager = UserbotManager()
