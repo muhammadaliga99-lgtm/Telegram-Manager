@@ -63,7 +63,7 @@ HARAKAT TURLARI (action):
    - chat: Qaysi chat yoki guruh (masalan: "sinfdoshlar", "ustoz")
    - target_person: Kimning xabariga javob berilishi kerak (masalan: "Aziz", "Ustoz", yoki null)
    - instruction: Foydalanuvchining qo'shimcha ko'rsatmasi (agar bo'lsa)
-   - voice: true / false (agar "ovozli", "golos" so'ralsa)
+   - voice: har doim "uz-UZ-SardorNeural" yoki "uz-UZ-MadinaNeural" (hech qachon boolean true/false emas!)
 
 2. "read_and_summarize": Agar chatdagi oxirgi gaplar, nima bo'layotgani haqida so'rasa.
    Misollar:

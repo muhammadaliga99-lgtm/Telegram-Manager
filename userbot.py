@@ -260,18 +260,25 @@ class UserbotManager:
         self,
         recipient: str,
         text: str,
-        voice: Optional[str] = None,
-        reply_to_msg_id: Optional[int] = None
+        voice: Optional[Any] = None,
+        reply_to_msg_id: Optional[int] = None,
+        rate: str = "+0%",
+        volume: str = "+0%"
     ) -> Dict[str, Any]:
         """Ovozli xabar (Edge-TTS golos) yuborish."""
         entity, target_name = await self.resolve_peer(recipient)
-        selected_voice = voice or settings.DEFAULT_VOICE
+        
+        # Ovoz nomi qat'iy str bo'lishi shart (True, None yoki noto'g'ri turlar bo'lsa default olinadi)
+        if isinstance(voice, str) and voice.strip() and voice.startswith("uz-"):
+            selected_voice = voice.strip()
+        else:
+            selected_voice = settings.DEFAULT_VOICE
 
         temp_dir = tempfile.gettempdir()
         temp_file = os.path.join(temp_dir, f"voice_{int(time.time() * 1000)}.ogg")
 
         try:
-            communicate = edge_tts.Communicate(text, selected_voice)
+            communicate = edge_tts.Communicate(text, selected_voice, rate=rate, volume=volume)
             await communicate.save(temp_file)
 
             msg = await self.client.send_file(

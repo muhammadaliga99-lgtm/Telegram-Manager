@@ -311,15 +311,19 @@ async def handle_text_command(message: Message):
         # ----------------------------------------------------
         elif action == "send_voice":
             recipient = intent.get("recipient") or intent.get("chat")
-            text = intent.get("message_text")
-            voice = intent.get("voice", settings.DEFAULT_VOICE)
+            text = intent.get("message_text") or user_prompt
+            raw_voice = intent.get("voice")
+            voice = raw_voice if (isinstance(raw_voice, str) and raw_voice.startswith("uz-")) else settings.DEFAULT_VOICE
 
-            if not recipient or not text:
-                await wait_msg.edit_text("Qabul qiluvchi yoki ovozli matn to'liq emas.")
+            if not recipient:
+                await wait_msg.edit_text("Qabul qiluvchi aniqlanmadi.")
                 return
 
+            # Agar foydalanuvchi baqiradigan yoki baland ovozda desa, volume ni oshiramiz
+            volume = "+50%" if any(w in user_prompt.lower() for w in ["baqir", "baland", "loud", "qichqir"]) else "+0%"
+
             await message.bot.send_chat_action(message.chat.id, ChatAction.RECORD_VOICE)
-            res = await userbot_manager.send_voice_message(recipient, text, voice=voice)
+            res = await userbot_manager.send_voice_message(recipient, text, voice=voice, volume=volume)
             await wait_msg.edit_text(
                 f"🎙 **Ovozli xabar (Golos) yuborildi!**\n\n"
                 f"👤 **Qabul qiluvchi:** `{res.get('target_name', recipient)}`\n"
