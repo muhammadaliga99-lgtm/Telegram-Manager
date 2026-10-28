@@ -42,9 +42,18 @@ class Settings(BaseSettings):
         "ustozim": "858709040",
         "behruz": "858709040",
         "behruz aka": "858709040",
+        "oyijon": "5464233056",       # Oyijonim
+        "oyijonim": "5464233056",
+        "oyi": "5464233056",
+        "onajon": "5464233056",
+        "ona": "5464233056",
         "adajon": "5550086617",        # Adajon
         "ada": "5550086617",
         "dada": "5550086617",
+        "boboxon": "7975358077",       # Boboxon
+        "boboxonga": "7975358077",
+        "buvijon": "2543047",          # Buvijonim
+        "buvijonim": "2543047",
         "sinfdoshlar": "-1004297560298",      # Sinfdoshlar guruhi
         "sinfdoshlar guruhi": "-1004297560298",
         "8-a": "-1002494199500",              # 8- “A” sinf

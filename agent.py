@@ -100,8 +100,10 @@ HARAKAT TURLARI (action):
    Parameters: recipient, message_text, voice
 
 7. "send_message": Oddiy to'g'ridan-to'g'ri matnli xabar jo'natish (rasm yoki audio emas).
-   Misollar: "Ustozimga salom deb yoz", "Bilolga nma gap deb yoz"
-   Parameters: recipient, message_text
+   Misollar: "Ustozimga salom deb yoz", "Bilolga nma gap deb yoz", "Oyijonimga salom ayt hurmat bilan", "Boboxonga salom ayt"
+   Parameters:
+   - recipient: Qabul qiluvchi shaxs yoki guruh nomi (qo'shimchalarsiz: masalan "Oyijonimga" bo'lsa "Oyijon", "Boboxonga" bo'lsa "Boboxon", "Ustozimga" bo'lsa "Ustoz")
+   - message_text: Muhammad Alining Toshkent personasida yozilgan xabar matni (qabul qiluvchiga mos ohangda)
 
 8. "clarify": Agar umuman tushunarsiz bo'lsa.
 
@@ -132,13 +134,15 @@ class AIAgent:
         seen = set()
         self.models_to_try = []
         candidates = [
+            "gemini-flash-lite-latest",
+            "gemini-3-flash-preview",
             settings.GEMINI_MODEL,
             "gemini-3.1-flash-lite",
-            "gemini-flash-lite-latest",
             "gemini-3.1-flash-lite-preview",
-            "gemini-3.8-flash",
+            "gemini-3.5-flash-lite",
             "gemini-2.5-flash",
             "gemini-3.5-flash",
+            "gemini-3.8-flash",
         ]
         for m in candidates:
             if m and m not in seen:

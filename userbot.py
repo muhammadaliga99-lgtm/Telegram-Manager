@@ -12,6 +12,7 @@ import os
 import re
 import tempfile
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,6 +22,7 @@ from telethon import TelegramClient
 from telethon.errors import RPCError
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest, UpdateUsernameRequest
+from telethon.tl.functions.contacts import GetContactsRequest
 from telethon.tl.functions.photos import UploadProfilePhotoRequest
 from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import Channel, Chat, User
@@ -32,17 +34,48 @@ logger = logging.getLogger(__name__)
 STOP_WORDS = {
     "guruhi", "guruhiga", "guruh", "chati", "chatiga", "chat",
     "kanali", "kanaliga", "kanal", "aka", "akaga", "opa", "opaga",
-    "toga", "togaga", "sinfi", "sinfiga", "ga", "ka", "a"
+    "toga", "togaga", "sinfi", "sinfiga", "ga", "ka", "qa", "a",
+    "degan", "kontaktga", "kontakt", "userga", "user"
 }
+
+UZBEK_SUFFIXES = (
+    "ning", "dan", "dagi", "daka", "dek", "ga", "ka", "qa",
+    "ni", "da", "imga", "im", "ing", "imiz", "ingiz", "lari", "lar",
+    "jonimga", "jonim", "jonga", "jon", "xon", "voy", "voyim"
+)
+
+
+def _normalize_text(s: str) -> str:
+    """Unicode NFKD normalizatsiyasi (matematik, qalin, kursiv shriftlarni oddiy harflarga aylantiradi)."""
+    if not s:
+        return ""
+    norm = unicodedata.normalize("NFKD", s)
+    norm = re.sub(r"['`ʻʼ‘“”—]", "", norm)
+    return norm.lower().strip()
 
 
 def _clean_tokens(s: str) -> List[str]:
-    cleaned = re.sub(r"[^\w\s]", " ", s.lower())
-    return [w for w in cleaned.split() if w not in STOP_WORDS and len(w) > 1]
+    norm = _normalize_text(s)
+    cleaned = re.sub(r"[^\w\s]", " ", norm)
+    tokens = []
+    for w in cleaned.split():
+        if w in STOP_WORDS or len(w) < 2:
+            continue
+        tokens.append(w)
+        for suff in UZBEK_SUFFIXES:
+            if w.endswith(suff) and len(w) - len(suff) >= 3:
+                stem = w[:-len(suff)]
+                if stem not in STOP_WORDS:
+                    tokens.append(stem)
+                break
+    return list(set(tokens))
 
 
 def _clean_str(s: str) -> str:
-    return " ".join(_clean_tokens(s))
+    norm = _normalize_text(s)
+    cleaned = re.sub(r"[^\w\s]", " ", norm)
+    words = [w for w in cleaned.split() if w not in STOP_WORDS and len(w) > 1]
+    return " ".join(words)
 
 
 def find_web_image(query: str) -> Optional[str]:
@@ -89,6 +122,8 @@ class UserbotManager:
         self.client: Optional[TelegramClient] = None
         self._cached_dialogs: List[Dict[str, Any]] = []
         self._last_dialogs_fetch: float = 0.0
+        self._cached_contacts: List[Dict[str, Any]] = []
+        self._last_contacts_fetch: float = 0.0
 
     async def start(self):
         """Telethon mijozini ishga tushirish."""
@@ -104,6 +139,7 @@ class UserbotManager:
         me = await self.client.get_me()
         logger.info(f"Telethon muvaffaqiyatli ulandi! Egasi: {me.first_name} (@{me.username}) ID={me.id}")
         await self.refresh_dialogs()
+        await self.refresh_contacts()
 
     async def stop(self):
         """Telethon mijozini to'xtatish."""
@@ -143,6 +179,34 @@ class UserbotManager:
             logger.error(f"Dialoglarni olishda xatolik: {e}")
         return self._cached_dialogs
 
+    async def refresh_contacts(self) -> List[Dict[str, Any]]:
+        """Telegram kontaktlar ro'yxatini olish va keshda saqlash."""
+        if not self.client:
+            return []
+        contacts = []
+        try:
+            res = await self.client(GetContactsRequest(hash=0))
+            for u in res.users:
+                fn = u.first_name or ""
+                ln = u.last_name or ""
+                full = f"{fn} {ln}".strip() if ln else fn
+                contacts.append({
+                    "id": u.id,
+                    "name": full or u.username or f"User {u.id}",
+                    "first_name": fn,
+                    "last_name": ln,
+                    "title": "",
+                    "username": u.username or "",
+                    "phone": u.phone or "",
+                    "type": "contact",
+                    "entity": u
+                })
+            self._cached_contacts = contacts
+            self._last_contacts_fetch = time.time()
+        except Exception as e:
+            logger.error(f"Kontaktlarni olishda xatolik: {e}")
+        return self._cached_contacts
+
     def _format_entity_name(self, entity: Any) -> str:
         if not entity:
             return "Noma'lum"
@@ -158,23 +222,28 @@ class UserbotManager:
             raise RuntimeError("Telethon mijozi ulanmagan!")
 
         cleaned = str(target).strip()
-        lowered = cleaned.lower()
-        cleaned_words = _clean_str(lowered)
+        lowered = _normalize_text(cleaned)
+        cleaned_words = _clean_str(cleaned)
+        target_tokens = set(_clean_tokens(cleaned))
 
         # 1. Aliaslar orqali tekshirish
         for alias_key, alias_id in settings.KNOWN_ALIASES.items():
-            if alias_key == lowered or alias_key in lowered or alias_key == cleaned_words:
+            ak = _normalize_text(alias_key)
+            if ak == lowered or ak == cleaned_words or lowered.startswith(ak) or (ak in target_tokens):
                 cleaned = alias_id
                 break
 
+        # Keshni yangilash
         if not self._cached_dialogs or (time.time() - self._last_dialogs_fetch > 300):
             await self.refresh_dialogs()
+        if not self._cached_contacts or (time.time() - self._last_contacts_fetch > 300):
+            await self.refresh_contacts()
 
         # 2. Agar raqam bo'lsa (ID)
         is_num = cleaned.lstrip("-").isdigit()
         if is_num:
             peer_id = int(cleaned)
-            for d in self._cached_dialogs:
+            for d in (self._cached_dialogs + self._cached_contacts):
                 if d["id"] == peer_id:
                     return d["entity"], d["name"]
             try:
@@ -185,9 +254,9 @@ class UserbotManager:
 
         # 3. Agar @username bo'lsa
         if cleaned.startswith("@"):
-            uname = cleaned.lstrip("@").lower()
-            for d in self._cached_dialogs:
-                if d["username"].lower() == uname:
+            uname = _normalize_text(cleaned.lstrip("@"))
+            for d in (self._cached_dialogs + self._cached_contacts):
+                if _normalize_text(d.get("username", "")) == uname:
                     return d["entity"], d["name"]
             try:
                 entity = await self.client.get_entity(cleaned)
@@ -195,46 +264,71 @@ class UserbotManager:
             except Exception as e:
                 logger.warning(f"Username orqali entity topilmadi ({cleaned}): {e}")
 
-        # 4. Aqlli dialoglar qidiruvi
-        target_tokens = set(_clean_tokens(cleaned))
-        best_match = None
+        # 4. Aqlli dialoglar va kontaktlar qidiruvi
+        all_peers = self._cached_dialogs + self._cached_contacts
+        bot_token_id = settings.TELEGRAM_BOT_TOKEN.split(":")[0] if ":" in settings.TELEGRAM_BOT_TOKEN else ""
+        
+        best_peer = None
         best_score = 0.0
 
-        for d in self._cached_dialogs:
-            d_name = d["name"].lower()
-            d_user = d["username"].lower()
-            d_clean = _clean_str(d_name)
-            d_tokens = set(_clean_tokens(d_name)) | set(_clean_tokens(d_user))
+        for p in all_peers:
+            pid_str = str(p.get("id", ""))
+            # Botning o'ziga xabar yuborishni cheklaymiz
+            if bot_token_id and pid_str == bot_token_id:
+                continue
 
-            if cleaned_words and (cleaned_words == d_clean or cleaned_words == d_user):
-                return d["entity"], d["name"]
+            p_clean = _clean_str(p.get("name", ""))
+            p_user = _normalize_text(p.get("username", ""))
+            p_first = _clean_str(p.get("first_name", ""))
+            p_tokens = set(_clean_tokens(p.get("name", ""))) | set(_clean_tokens(p.get("username", "")))
 
-            if cleaned_words and len(cleaned_words) >= 3:
-                if cleaned_words in d_clean or d_clean in cleaned_words:
-                    return d["entity"], d["name"]
+            # Bo'sh nom yoki faqat emoji bo'lgan kontaktlarni nomuvofiq deb hisoblaymiz
+            if not p_clean and not p_user:
+                continue
 
-            if target_tokens and d_tokens:
-                overlap = target_tokens.intersection(d_tokens)
+            score = 0.0
+
+            # A. Aniq to'liq moslik (Exact match)
+            if cleaned_words and (cleaned_words == p_clean or cleaned_words == p_user or cleaned_words == p_first):
+                score = 100.0
+            # B. Qidiruv so'zi kontakt nomi ichida mavjudligi (masalan: "oyijon" -> "OYIJONIM")
+            elif cleaned_words and len(cleaned_words) >= 3 and len(p_clean) >= 3 and cleaned_words in p_clean:
+                score = 85.0
+            # C. Kontakt nomi qidiruv so'zi ichida mavjudligi (masalan: "Boboxon" -> "boboxonga")
+            elif cleaned_words and len(p_clean) >= 3 and p_clean in cleaned_words:
+                score = 80.0
+            # D. Tokenlar kesishuvi (O'zaklar bo'yicha)
+            elif target_tokens and p_tokens:
+                overlap = target_tokens.intersection(p_tokens)
                 if overlap:
-                    score = len(overlap) / max(len(target_tokens), 1)
-                    if score > best_score:
-                        best_score = score
-                        best_match = d
+                    score = 60.0 * (len(overlap) / max(len(target_tokens), 1))
 
-        if best_match and best_score >= 0.5:
-            return best_match["entity"], best_match["name"]
+            if score > best_score:
+                best_score = score
+                best_peer = p
 
+        if best_peer and best_score >= 50.0:
+            return best_peer["entity"], best_peer["name"]
+
+        # 5. Keshni qayta yangilab oxirgi marta izlash
         await self.refresh_dialogs(limit=100)
-        for d in self._cached_dialogs:
-            d_clean = _clean_str(d["name"])
-            if cleaned_words and (cleaned_words in d_clean or d_clean in cleaned_words):
-                return d["entity"], d["name"]
+        await self.refresh_contacts()
+        all_peers = self._cached_dialogs + self._cached_contacts
 
+        for p in all_peers:
+            p_clean = _clean_str(p.get("name", ""))
+            if not p_clean:
+                continue
+            if cleaned_words and len(cleaned_words) >= 3 and len(p_clean) >= 3:
+                if cleaned_words == p_clean or cleaned_words in p_clean or p_clean in cleaned_words:
+                    return p["entity"], p["name"]
+
+        # 6. So'nggi chora: get_entity
         try:
             entity = await self.client.get_entity(cleaned)
             return entity, self._format_entity_name(entity)
-        except Exception as e:
-            raise ValueError(f"Qabul qiluvchi topilmadi: '{target}'. Iltimos, suhbat nomini to'g'ri yozing.")
+        except Exception:
+            raise ValueError(f"Qabul qiluvchi topilmadi: '{target}'. Iltimos, kontakt yoki guruh nomini to'g'ri yozing.")
 
     # ========================================================
     # XABARLAR TARIXI VA KONTEKST OLISH

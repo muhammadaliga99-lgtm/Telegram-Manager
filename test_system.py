@@ -31,12 +31,23 @@ async def run_tests():
     assert userbot_manager.is_connected(), "Telethon ulanmadi!"
     print(f"✅ Telethon ulandi! Keshdagi dialoglar soni: {len(userbot_manager._cached_dialogs)}")
 
-    # 3. Peer Resolution Test (Ustoz va Sinfdoshlar guruhi)
-    print("\n[TEST 3] 'ustoz' va 'sinfdoshlar guruhi' aliasini aniqlash...")
+    # 3. Peer Resolution Test (Ustoz, Oyijon, Boboxon va Sinfdoshlar guruhi)
+    print("\n[TEST 3] Peer Resolution (Ustoz, Oyijonim, Boboxon, Sinfdoshlar)...")
     e1, n1 = await userbot_manager.resolve_peer("ustoz")
     print(f"✅ 'ustoz' -> {n1}")
+    assert "858709040" in str(getattr(e1, "id", "")), "Ustoz ID xato!"
+
     e2, n2 = await userbot_manager.resolve_peer("sinfdoshlar guruhi")
     print(f"✅ 'sinfdoshlar guruhi' -> {n2}")
+    assert "4297560298" in str(getattr(e2, "id", "")), "Sinfdoshlar guruhi ID xato!"
+
+    e3, n3 = await userbot_manager.resolve_peer("Oyijonimga")
+    print(f"✅ 'Oyijonimga' -> {n3} (ID: {getattr(e3, 'id', None)})")
+    assert getattr(e3, "id", None) == 5464233056, "Oyijonim ID xato!"
+
+    e4, n4 = await userbot_manager.resolve_peer("Boboxonga")
+    print(f"✅ 'Boboxonga' -> {n4} (ID: {getattr(e4, 'id', None)})")
+    assert getattr(e4, "id", None) == 7975358077, "Boboxon ID xato!"
 
     # 4. Intent Classification Test: Smart Reply
     print("\n[TEST 4] Intent Router: 'Sinfdoshlar guruhiga Aziz yozgan oxirgi xabariga javob ber'...")
