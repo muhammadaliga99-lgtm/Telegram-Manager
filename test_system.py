@@ -34,10 +34,13 @@ async def run_tests():
     assert userbot_manager.is_connected(), "Telethon ulanmadi!"
     print(f"✅ Telethon ulandi! Keshdagi dialoglar soni: {len(userbot_manager._cached_dialogs)}")
 
-    # 3. Peer Resolution Test (Ustoz)
-    print("\n[TEST 3] 'ustoz' aliasini aniqlash...")
-    entity, name = await userbot_manager.resolve_peer("ustoz")
-    print(f"✅ 'ustoz' topildi -> Nomi: {name}, ID: {getattr(entity, 'id', None)}")
+    # 3. Peer Resolution Test (Ustoz va Sinfdoshlar guruhi)
+    print("\n[TEST 3] 'ustoz' va 'sinfdoshlar guruhi' aliasini aniqlash...")
+    entity1, name1 = await userbot_manager.resolve_peer("ustoz")
+    print(f"✅ 'ustoz' topildi -> Nomi: {name1}, ID: {getattr(entity1, 'id', None)}")
+
+    entity2, name2 = await userbot_manager.resolve_peer("sinfdoshlar guruhi")
+    print(f"✅ 'sinfdoshlar guruhi' topildi -> Nomi: {name2}, ID: {getattr(entity2, 'id', None)}")
 
     # 4. Gemini AI Agent Test (Ustozga salom yozish)
     print("\n[TEST 4] Gemini AI Agent tahlili: 'ustozimga salom deb yoz'...")

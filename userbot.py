@@ -7,6 +7,7 @@ yuborish vazifalarini bajaradi.
 import asyncio
 import logging
 import os
+import re
 import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +21,21 @@ from telethon.tl.types import Channel, Chat, User
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+STOP_WORDS = {
+    "guruhi", "guruhiga", "guruh", "chati", "chatiga", "chat",
+    "kanali", "kanaliga", "kanal", "aka", "akaga", "opa", "opaga",
+    "toga", "togaga", "sinfi", "sinfiga", "ga", "ka", "a"
+}
+
+
+def _clean_tokens(s: str) -> List[str]:
+    cleaned = re.sub(r"[^\w\s]", " ", s.lower())
+    return [w for w in cleaned.split() if w not in STOP_WORDS and len(w) > 1]
+
+
+def _clean_str(s: str) -> str:
+    return " ".join(_clean_tokens(s))
 
 
 class UserbotManager:
@@ -100,10 +116,10 @@ class UserbotManager:
     async def resolve_peer(self, target: str) -> Tuple[Any, str]:
         """
         Qabul qiluvchi identifikatorini entity ob'ektiga aylantirish:
-        1. Known aliases (ustoz, adajon, va h.k.)
+        1. Known aliases (ustoz, adajon, sinfdoshlar va h.k.)
         2. Raqamli Telegram ID
         3. @username
-        4. Keshdagi suhbatlar nomidan qidiruv
+        4. Aqlli fuzzy qidiruv (stop-wordlarni tozalab, guruh nomini solishtirish)
         5. cl.get_entity() to'g'ridan-to'g'ri chaqiruv
         """
         if not self.client:
@@ -111,22 +127,22 @@ class UserbotManager:
 
         cleaned = str(target).strip()
         lowered = cleaned.lower()
+        cleaned_words = _clean_str(lowered)
 
-        # 1. Alias orqali tekshirish
+        # 1. Alias orqali tekshirish (to'g'ridan-to'g'ri va tozalangan holda)
         for alias_key, alias_id in settings.KNOWN_ALIASES.items():
-            if alias_key in lowered:
+            if alias_key == lowered or alias_key in lowered or alias_key == cleaned_words:
                 cleaned = alias_id
                 break
 
-        # Keshni yangilab olish agar eskirgan bo'lsa (10 daqiqa)
-        if time.time() - self._last_dialogs_fetch > 600:
+        # Keshni yangilab olish agar bo'sh yoki eskirgan bo'lsa
+        if not self._cached_dialogs or (time.time() - self._last_dialogs_fetch > 300):
             await self.refresh_dialogs()
 
         # 2. Agar raqam bo'lsa (ID)
         is_num = cleaned.lstrip("-").isdigit()
         if is_num:
             peer_id = int(cleaned)
-            # Avval keshdan qidiramiz
             for d in self._cached_dialogs:
                 if d["id"] == peer_id:
                     return d["entity"], d["name"]
@@ -148,20 +164,51 @@ class UserbotManager:
             except Exception as e:
                 logger.warning(f"Username orqali entity topilmadi ({cleaned}): {e}")
 
-        # 4. Dialoglar ro'yxatidan qidirish (ism/familiya/nom bo'yicha)
-        search_term = lowered.lstrip("@")
+        # 4. Aqlli dialoglar qidiruvi (Token va Substring matching)
+        target_tokens = set(_clean_tokens(cleaned))
+        best_match = None
+        best_score = 0.0
+
         for d in self._cached_dialogs:
             d_name = d["name"].lower()
             d_user = d["username"].lower()
-            if search_term == d_user or search_term in d_name:
+            d_clean = _clean_str(d_name)
+            d_tokens = set(_clean_tokens(d_name)) | set(_clean_tokens(d_user))
+
+            # Aniq moslik
+            if cleaned_words and (cleaned_words == d_clean or cleaned_words == d_user):
                 return d["entity"], d["name"]
 
-        # 5. So'nggi chora: get_entity orqali qidirib ko'rish
+            # Substring moslik
+            if cleaned_words and len(cleaned_words) >= 3:
+                if cleaned_words in d_clean or d_clean in cleaned_words:
+                    return d["entity"], d["name"]
+
+            # Token overlap hisoblash
+            if target_tokens and d_tokens:
+                overlap = target_tokens.intersection(d_tokens)
+                if overlap:
+                    score = len(overlap) / max(len(target_tokens), 1)
+                    if score > best_score:
+                        best_score = score
+                        best_match = d
+
+        if best_match and best_score >= 0.5:
+            return best_match["entity"], best_match["name"]
+
+        # 5. Dialoglarni kengroq (100 ta) yangilab qayta urinib ko'rish
+        await self.refresh_dialogs(limit=100)
+        for d in self._cached_dialogs:
+            d_clean = _clean_str(d["name"])
+            if cleaned_words and (cleaned_words in d_clean or d_clean in cleaned_words):
+                return d["entity"], d["name"]
+
+        # 6. So'nggi chora: get_entity
         try:
             entity = await self.client.get_entity(cleaned)
             return entity, self._format_entity_name(entity)
         except Exception as e:
-            raise ValueError(f"Qabul qiluvchi topilmadi: '{target}'. Xatolik: {e}")
+            raise ValueError(f"Qabul qiluvchi topilmadi: '{target}'. Iltimos, suhbat nomini to'g'ri yozing.")
 
     async def send_text_message(self, recipient: str, text: str) -> Dict[str, Any]:
         """Muhammad Alining nomidan matnli xabar yuborish."""

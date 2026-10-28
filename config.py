@@ -45,6 +45,12 @@ class Settings(BaseSettings):
         "adajon": "5550086617",        # Adajon
         "ada": "5550086617",
         "dada": "5550086617",
+        "sinfdoshlar": "-1004297560298",      # Sinfdoshlar guruhi
+        "sinfdoshlar guruhi": "-1004297560298",
+        "8-a": "-1002494199500",              # 8- “A” sinf
+        "8-a sinf": "-1002494199500",
+        "8 a": "-1002494199500",
+        "8 a sinf": "-1002494199500",
         "humoyun": "6329250150",
         "islom": "8477424170",
         "bilol": "8183284050",
