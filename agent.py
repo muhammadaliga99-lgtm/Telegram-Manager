@@ -83,23 +83,36 @@ HARAKAT TURLARI (action):
 4. "get_profile": Profil ma'lumotlarini ko'rsatish so'ralsa.
    Misollar: "Profilimni ko'rsat", "Bio'da nima yozilgan?"
 
-5. "send_voice": Ovozli xabar jo'natish so'ralsa (agar oldingi xabarlarni o'qish shart bo'lmasa).
+5. "send_photo": Agar foydalanuvchi biror shaxs, narsa yoki hayvonning RASMINI (fotosuratini) yuborishni so'rasa!
+   MUHIM: Matn yoki emoji emas, aynan haqiqiy foto jo'natilishi kerak!
+   Misollar:
+   - "Endi Ronaldo rasmini yubor Sinfdoshlar guruhiga"
+   - "Apelsin rasmini tashla"
+   - "Mushuk rasmini jo'nat"
+   Parameters:
+   - recipient: Qabul qiluvchi (masalan: "sinfdoshlar")
+   - image_query: Rasm qidirish uchun aniq inglizcha kalit so'z (masalan: "Cristiano Ronaldo", "Orange fruit", "Cute cat")
+   - caption: Rasm tagiga yoziladigan qisqa do'stona izoh
+
+6. "send_voice": Ovozli xabar jo'natish so'ralsa (agar oldingi xabarlarni o'qish shart bo'lmasa).
    Misollar: "Adajonga kech qolaman deb golos yubor"
    Parameters: recipient, message_text, voice
 
-6. "send_message": Oddiy to'g'ridan-to'g'ri xabar jo'natish.
+7. "send_message": Oddiy to'g'ridan-to'g'ri matnli xabar jo'natish (rasm yoki audio emas).
    Misollar: "Ustozimga salom deb yoz", "Bilolga nma gap deb yoz"
    Parameters: recipient, message_text
 
-7. "clarify": Agar umuman tushunarsiz bo'lsa.
+8. "clarify": Agar umuman tushunarsiz bo'lsa.
 
 JAVOBNI FAQAT QUYIDAGI JSON FORMATIDA BER:
 {{
-  "action": "smart_reply" | "read_and_summarize" | "update_profile" | "get_profile" | "send_message" | "send_voice" | "clarify",
+  "action": "smart_reply" | "read_and_summarize" | "update_profile" | "get_profile" | "send_photo" | "send_message" | "send_voice" | "clarify",
   "chat": "chat yoki guruh nomi",
   "recipient": "qabul qiluvchi",
   "target_person": "kimga javob",
   "instruction": "yo'riqnoma",
+  "image_query": "inglizcha qidiruv so'zi (send_photo uchun)",
+  "caption": "rasm izohi",
   "message_text": "matn",
   "voice": "uz-UZ-SardorNeural",
   "first_name": null,
@@ -114,7 +127,7 @@ JAVOBNI FAQAT QUYIDAGI JSON FORMATIDA BER:
 class AIAgent:
     def __init__(self):
         self.api_key = settings.GEMINI_API_KEY
-        self.models_to_try = [settings.GEMINI_MODEL, "gemini-3.6-flash", "gemini-2.5-flash"]
+        self.models_to_try = [settings.GEMINI_MODEL, "gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"]
 
     async def _call_gemini(self, system_instruction: str, user_content: str) -> Optional[Dict[str, Any]]:
         """Gemini API chaqiruvi yordamchi funksiyasi."""

@@ -288,7 +288,32 @@ async def handle_text_command(message: Message):
             )
 
         # ----------------------------------------------------
-        # HARAKAT 5: ODDIY MATNLI XABAR YUBORISH
+        # HARAKAT 5: HAQIQIY RASM (PHOTO) YUBORISH
+        # ----------------------------------------------------
+        elif action == "send_photo":
+            recipient = intent.get("recipient") or intent.get("chat")
+            image_query = intent.get("image_query") or user_prompt
+            caption = intent.get("caption") or ""
+
+            if not recipient:
+                await wait_msg.edit_text("Qaysi chat yoki guruhga rasm yuborish kerakligi aniqlanmadi.")
+                return
+
+            await message.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_PHOTO)
+            await wait_msg.edit_text(f"🔍 _«{image_query}» bo'yicha yuqori sifatli foto qidirilmoqda va yuklanmoqda..._", parse_mode=ParseMode.MARKDOWN)
+
+            res = await userbot_manager.send_photo_message(recipient, image_query, caption=caption)
+            await wait_msg.edit_text(
+                f"🖼 **Haqiqiy rasm (Foto) yuborildi!**\n\n"
+                f"👤 **Qabul qiluvchi:** `{res.get('target_name', recipient)}`\n"
+                f"📸 **Rasm mavzusi:** _{image_query}_\n"
+                f"💬 **Izoh:** {caption or '(izohsiz)'}\n\n"
+                f"⚡ *Avtomatik rejimda Muhammad Ali hisobidan yetkazildi.*",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+        # ----------------------------------------------------
+        # HARAKAT 6: ODDIY MATNLI XABAR YUBORISH
         # ----------------------------------------------------
         elif action == "send_message":
             recipient = intent.get("recipient") or intent.get("chat")

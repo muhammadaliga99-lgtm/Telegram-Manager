@@ -6,11 +6,14 @@ Telethon Userbot moduli (Kengaytirilgan v2.0):
 - Matnli va Edge-TTS ovozli xabarlarni (golos) yuborish
 """
 import asyncio
+import json
 import logging
 import os
 import re
 import tempfile
 import time
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 import edge_tts
@@ -40,6 +43,42 @@ def _clean_tokens(s: str) -> List[str]:
 
 def _clean_str(s: str) -> str:
     return " ".join(_clean_tokens(s))
+
+
+def find_web_image(query: str) -> Optional[str]:
+    """Internetdan (Wikimedia Commons va Wikipedia) yuqori sifatli rasm qidirish."""
+    headers = {"User-Agent": "TelegramManagerBot/2.0 (student; contact: muhammadali@example.com)"}
+    clean_q = query.strip()
+
+    # 1. Wikimedia Commons orqali qidirish (Optimallashtirilgan 1280px thumbnail)
+    url1 = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch={urllib.parse.quote(clean_q)}&gsrlimit=1&prop=imageinfo&iiprop=url&iiurlwidth=1280&format=json"
+    try:
+        req = urllib.request.Request(url1, headers=headers)
+        with urllib.request.urlopen(req, timeout=6) as r:
+            d = json.loads(r.read().decode("utf-8"))
+            pages = d.get("query", {}).get("pages", {})
+            for k, v in pages.items():
+                info = v.get("imageinfo", [])
+                if info:
+                    return info[0].get("thumburl") or info[0].get("url")
+    except Exception as e:
+        logger.warning(f"Commons qidiruv xatosi: {e}")
+
+    # 2. Wikipedia maqolasi rasmi
+    url2 = f"https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch={urllib.parse.quote(clean_q)}&gsrlimit=1&prop=pageimages&piprop=thumbnail&pithumbsize=1280&format=json"
+    try:
+        req = urllib.request.Request(url2, headers=headers)
+        with urllib.request.urlopen(req, timeout=6) as r:
+            d = json.loads(r.read().decode("utf-8"))
+            pages = d.get("query", {}).get("pages", {})
+            for k, v in pages.items():
+                thumb = v.get("thumbnail", {})
+                if "source" in thumb:
+                    return thumb["source"]
+    except Exception as e:
+        logger.warning(f"Wikipedia qidiruv xatosi: {e}")
+
+    return None
 
 
 class UserbotManager:
@@ -297,6 +336,57 @@ class UserbotManager:
                 "text": text,
                 "voice": selected_voice,
                 "type": "voice"
+            }
+        finally:
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except Exception:
+                    pass
+
+    async def send_photo_message(
+        self,
+        recipient: str,
+        query_or_url: str,
+        caption: str = "",
+        reply_to_msg_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Internetdan rasm qidirib yoki to'g'ridan-to'g'ri URL bo'yicha haqiqiy rasm (photo) qilib jo'natish."""
+        if not self.client:
+            raise RuntimeError("Telethon mijozi ulanmagan!")
+
+        entity, target_name = await self.resolve_peer(recipient)
+
+        if query_or_url.startswith("http://") or query_or_url.startswith("https://"):
+            image_url = query_or_url
+        else:
+            image_url = find_web_image(query_or_url)
+            if not image_url:
+                raise ValueError(f"'{query_or_url}' bo'yicha rasm topilmadi. Iltimos, boshqacha nom bilan qidirib ko'ring.")
+
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, f"photo_{int(time.time() * 1000)}.jpg")
+
+        req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            with open(temp_file, "wb") as f:
+                f.write(r.read())
+
+        try:
+            msg = await self.client.send_file(
+                entity,
+                temp_file,
+                caption=caption,
+                reply_to=reply_to_msg_id
+            )
+            return {
+                "success": True,
+                "target_name": target_name,
+                "target_id": getattr(entity, "id", None),
+                "message_id": msg.id,
+                "caption": caption,
+                "image_url": image_url,
+                "type": "photo"
             }
         finally:
             if os.path.exists(temp_file):
